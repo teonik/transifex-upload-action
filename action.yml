@@ -62,5 +62,7 @@ runs:
       force_upload: ${{ inputs.force_upload }}
 
     run: |
-      node ${{ github.action_path }}/dist/index.js
+      cd ${{ github.action_path }}
+      npm i
+      node src/index.js
     shell: bash
