@@ -64,7 +64,7 @@ export class TransifexApiHelper {
         }
 
         if (!this.#organization) {
-            throw "Organization not found";
+            throw new Error("Organization not found");
         }
 
         return this.#organization;
@@ -73,8 +73,11 @@ export class TransifexApiHelper {
     //
     async #getProject() {
         const projects = await this.#organization.fetch("projects");
-        console.log(projects);
         this.#project = await projects.get({ name: this.project_name });
+        if (!this.#project) {
+            throw new Error("Project not found");
+        }
+        console.log(this.#projects);
         return this.#project;
     }
 
