@@ -77,7 +77,7 @@ export class TransifexApiHelper {
         if (!this.#project) {
             throw new Error("Project not found");
         }
-        console.log(this.#projects);
+        console.log(this.#project);
         return this.#project;
     }
 
