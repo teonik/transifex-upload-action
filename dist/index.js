@@ -7239,7 +7239,7 @@ async function main() {
   // Create the final added,deleted,modified file lists
   const added = extraFilesOnRepo(transifexFiles, repoFiles, tfx_resource_name_pattern);
   const deleted = extraFilesOnTransifex(transifexFiles, repoFiles, tfx_resource_name_pattern);
-  const modified = force_upload ? repoFiles.filter(f => !added.includes(f)) : matchedModified;
+  const modified = force_upload ? repoFiles.filter(f => !added.includes(f)) : matchedModified.filter(f => !added.includes(f));
 
   // Helper function to read multiple files asynchronously
   const readFilesAsync = filenames => filenames.map(f => new Promise(async resolve => {
