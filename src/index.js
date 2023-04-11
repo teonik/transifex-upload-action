@@ -84,9 +84,6 @@ async function main() {
   const transifexFiles = (await tfxHelper.getProjectFiles()).map(f => f.name);
   const transifex_source_lang = await tfxHelper.getSourceLanguage();
 
-  console.error(e.message);
-
-
   // Generate the final Transifex resource naming pattern
   const tfx_resource_name_pattern = tfx_name_pattern.replace(/<lang>/g, transifex_source_lang).replace("<ext>", file_extension);
 
