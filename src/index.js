@@ -80,14 +80,12 @@ async function main() {
 
 
   // Setup Transifex helper and get project details
-  try {
-    const tfxHelper = await TransifexApiHelper.create(tfx_token, tfx_org, tfx_project);
-    const transifexFiles = (await tfxHelper.getProjectFiles()).map(f => f.name);
-    const transifex_source_lang = await tfxHelper.getSourceLanguage();
-  }
-  catch (e) {
-    console.error(e.message);
-  }
+  const tfxHelper = await TransifexApiHelper.create(tfx_token, tfx_org, tfx_project);
+  const transifexFiles = (await tfxHelper.getProjectFiles()).map(f => f.name);
+  const transifex_source_lang = await tfxHelper.getSourceLanguage();
+
+  console.error(e.message);
+
 
   // Generate the final Transifex resource naming pattern
   const tfx_resource_name_pattern = tfx_name_pattern.replace(/<lang>/g, transifex_source_lang).replace("<ext>", file_extension);
@@ -117,54 +115,54 @@ async function main() {
     });
   }));
 
-  try {
-    // Read added/modified file contents
-    const added_files_read_promises = readFilesAsync(added);
-    const modded_files_read_promises = readFilesAsync(modified)
+  // Read added/modified file contents
+  const added_files_read_promises = readFilesAsync(added);
+  const modded_files_read_promises = readFilesAsync(modified)
 
-    let added_request_promises = [];
-    let modded_request_promises = [];
-    let deleted_request_promises = [];
+  let added_request_promises = [];
+  let modded_request_promises = [];
+  let deleted_request_promises = [];
 
-    // Create new resource
-    if (added.length > 0) {
-      console.log("Creating resources:");
-      console.log(added);
+  // Create new resource
+  if (added.length > 0) {
+    console.log("Creating resources:");
+    console.log(added);
 
-      const added_files = await Promise.all(added_files_read_promises);
-      added_request_promises = added_files.map(added_file =>
-        tfxHelper.createResoureWithContent(convertRepoNameToTransifexName(added_file.filename, tfx_resource_name_pattern), added_file.contents));
-    }
-
-    // Update modified resources
-    if (modified.length > 0) {
-      console.log("Updating resources:");
-      console.log(modified);
-
-      const modded_files = await Promise.all(modded_files_read_promises);
-      modded_request_promises = modded_files.map(modded_file =>
-        tfxHelper.updateResource(convertRepoNameToTransifexName(modded_file.filename, tfx_resource_name_pattern), modded_file.contents));
-    }
-
-    // Delete resources
-    if (deleted.length > 0) {
-      console.log("Deleting resources:");
-      console.log(deleted);
-      for (const d of deleted) {
-        deleted_request_promises.push(tfxHelper.deleteResource(d));
-      };
-    }
-
-    // Wait for all requests to finish
-    await Promise.all([
-      ...added_request_promises,
-      ...modded_request_promises,
-      ...deleted_request_promises
-    ]);
+    const added_files = await Promise.all(added_files_read_promises);
+    added_request_promises = added_files.map(added_file =>
+      tfxHelper.createResoureWithContent(convertRepoNameToTransifexName(added_file.filename, tfx_resource_name_pattern), added_file.contents));
   }
-  catch (e) {
-    console.error(e.message);
+
+  // Update modified resources
+  if (modified.length > 0) {
+    console.log("Updating resources:");
+    console.log(modified);
+
+    const modded_files = await Promise.all(modded_files_read_promises);
+    modded_request_promises = modded_files.map(modded_file =>
+      tfxHelper.updateResource(convertRepoNameToTransifexName(modded_file.filename, tfx_resource_name_pattern), modded_file.contents));
   }
+
+  // Delete resources
+  if (deleted.length > 0) {
+    console.log("Deleting resources:");
+    console.log(deleted);
+    for (const d of deleted) {
+      deleted_request_promises.push(tfxHelper.deleteResource(d));
+    };
+  }
+
+  // Wait for all requests to finish
+  await Promise.all([
+    ...added_request_promises,
+    ...modded_request_promises,
+    ...deleted_request_promises
+  ]);
 }
 
-main();
+try {
+  main();
+}
+catch (e) {
+  console.error(e.message);
+}

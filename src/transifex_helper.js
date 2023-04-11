@@ -73,6 +73,7 @@ export class TransifexApiHelper {
     //
     async #getProject() {
         const projects = await this.#organization.fetch("projects");
+        console.log(projects);
         this.#project = await projects.get({ name: this.project_name });
         return this.#project;
     }
