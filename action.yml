@@ -1,0 +1,66 @@
+name: Transifex Upload Action
+description: "Uploads language files to a Transifex project"
+inputs:
+  match_patterns:
+    description: "Matching patterns for language files"
+    required: true
+  transifex_file_type:
+    description: "Transifex file type (JSON, XML, CSV, INI, etc.)"
+    required: false
+    default: INI
+  file_extension:
+    description: "Language file extension"
+    required: false
+    default: ".ini"
+  transifex_token:
+    description: "Transifex API access token"
+    required: true
+  transifex_organization:
+    description: "Transifex organization name"
+    required: true
+  transifex_project:
+    description: "Transifex project name"
+    required: true
+  transifex_name_pattern:
+    description: "The naming pattern of Transifex resources"
+    required: true
+  force_upload:
+    description: "Upload and overwrite every resource in the project. Deletes dangling resources"
+    default: false
+
+runs:
+  using: "composite"
+  steps:
+  - name: Checkout code
+    uses: actions/checkout@v3
+    with:
+      fetch-depth: 2
+      ref: ${{ github.ref }}
+
+  - name: Get changed files
+    id: changed-files
+    uses: tj-actions/changed-files@v35
+    with:
+      separator: ","
+    
+  - name: Upload to Transifex
+    id: tfx-upload
+    env:
+      added: ${{ steps.changed-files.outputs.added_files }}
+      modified: ${{ steps.changed-files.outputs.modified_files }}
+      deleted: ${{ steps.changed-files.outputs.deleted_files }}
+      copied: ${{ steps.changed-files.outputs.copied_files }}
+      renamed: ${{ steps.changed-files.outputs.renamed_files }}
+      
+      match_patterns: ${{ inputs.match_patterns }}
+      transifex_file_type: ${{ inputs.transifex_file_type }}
+      transifex_token: ${{ inputs.transifex_token }}
+      transifex_organization: ${{ inputs.transifex_organization }}
+      transifex_project: ${{ inputs.transifex_project }}
+      file_extension: ${{ inputs.file_extension }}
+      transifex_name_pattern: ${{ inputs.transifex_name_pattern }}
+      force_upload: ${{ inputs.force_upload }}
+
+    run: |
+      node ${{ github.action_path }}/dist/index.js
+    shell: bash
