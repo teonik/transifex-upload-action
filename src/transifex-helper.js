@@ -9,7 +9,6 @@ export class TransifexApiHelper {
     token;
     organization_name;
     project_name;
-    language_code;
 
     //
     constructor(token, organization_name, project_name) {
@@ -34,8 +33,6 @@ export class TransifexApiHelper {
 
         this.#resources = await this.#project.fetch("resources");
         await this.#resources.fetch();
-
-        this.language_code = await this.getSourceLanguage();
     }
 
     //
@@ -83,6 +80,9 @@ export class TransifexApiHelper {
     //
     async updateResource(resource_name, content) {
         const resource = await this.#resources.get({ name: resource_name });
+        if (!resource) {
+            throw new Error(`Resource not found: ${resource_name}`);
+        }
         return transifexApi.ResourceStringsAsyncUpload.upload({
             resource,
             content,
@@ -90,7 +90,7 @@ export class TransifexApiHelper {
     }
 
     //
-    async createResoure(resource_name) {
+    async createResource(resource_name) {
         const slug = path
             .basename(resource_name, path.extname(resource_name))
             .replace(/(\.|\s)/g, "_");
@@ -111,24 +111,24 @@ export class TransifexApiHelper {
     }
 
     //
-    async createResoureWithContent(resource_name, content) {
-        const new_resource = await this.createResoure(resource_name);
-        // const sleep = ms => new Promise(r => setTimeout(r, ms));
-        // await sleep(5000);
+    async createResourceWithContent(resource_name, content) {
+        const new_resource = await this.createResource(resource_name);
         try {
             return transifexApi.ResourceStringsAsyncUpload.upload({
                 resource: new_resource,
                 content,
             });
-        }
-        catch (e) {
-            console.error(e);
+        } catch (error) {
+            throw new Error(`Failed to upload content for resource ${resource_name}: ${error.message}`);
         }
     }
 
     //
     async deleteResource(resource_name) {
         const res = await this.#resources.get({ name: resource_name });
+        if (!res) {
+            throw new Error(`Resource not found: ${resource_name}`);
+        }
         return res.delete();
     }
 }

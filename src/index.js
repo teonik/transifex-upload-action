@@ -1,133 +1,86 @@
-import { globSync } from 'glob';
-import { minimatch } from 'minimatch';
-import { TransifexApiHelper } from './transifex_helper.js';
-import * as path from 'path';
-import * as fs from 'fs';
-
-/**
- * Helper functions
- */
-
-// Returns matched filenames based on the given list of glob patterns
-const getRepoLanguageFiles = patterns => patterns.reduce((matched, pattern) => matched.concat(globSync(pattern, { ignore: ['node_modules/**', 'vendor/**'] })), []);
-
-// Match a list of filenames against a list of glob patterns
-const matchFiles = (files, patterns) => files.filter(f => patterns.find(p => minimatch(f, p)), []).filter(m => m != null);
-
-// Prepares array values (a comma separated string) from env variables
-const prepareEnvArrayValue = env_var => env_var.split(",").filter(env_var => env_var != '');
-
-// Converts a filename to it's Transifex project resource name
-function convertRepoNameToTransifexName(repo_filename, tfx_name_pattern) {
-  const directory = path.dirname(repo_filename);
-  const extension = path.extname(repo_filename);
-
-  const filename_regex = '(?<filename>[a-zA-Z0-9_\\.\\-\\s]+)';
-
-  const resource_name_regex_str = tfx_name_pattern
-    .replace(/\./g, "\\.")
-    .replace("<filename>", filename_regex)
-    .replace("<ext>", extension)
-    .replace("<directory>", directory);
-
-  const resource_name_regex = new RegExp(resource_name_regex_str);
-  const match = tfx_name_pattern.includes("<directory>") ? repo_filename.match(resource_name_regex) : path.basename(repo_filename).match(resource_name_regex);
-  if (match) {
-    return tfx_name_pattern
-      .replace("<filename>", match.groups.filename)
-      .replace("<ext>", extension)
-      .replace("<directory>", directory);
-  }
-  else {
-    // Should never get here
-    throw new Error("No match found for " + repo_filename + " and tfx_name_pattern: " + tfx_name_pattern);
-  }
-}
-
-//
-const extraFilesOnRepo = (transifexFiles, repoFiles, name_pattern) => repoFiles.filter(f => !transifexFiles.includes(convertRepoNameToTransifexName(f, name_pattern)));
-
-//
-const extraFilesOnTransifex = (transifexFiles, repoFiles, name_pattern) => transifexFiles.filter(f => !repoFiles.map(f_ => convertRepoNameToTransifexName(f_, name_pattern)).includes(f));
-
+import { TransifexApiHelper } from './transifex-helper.js';
+import { getRepoLanguageFiles, matchFiles, prepareEnvArrayValue, readFilesAsync } from './file-utils.js';
+import { convertRepoNameToTransifexName, getNewFiles, getDeletedFiles } from './name-utils.js';
 
 /**
  * Action entrypoint
  */
+
+function validateEnvVariables() {
+  const requiredVars = {
+    'transifex_organization': process.env.transifex_organization,
+    'transifex_token': process.env.transifex_token,
+    'transifex_project': process.env.transifex_project,
+    'transifex_name_pattern': process.env.transifex_name_pattern,
+    'match_patterns': process.env.match_patterns,
+  };
+  
+  for (const [name, value] of Object.entries(requiredVars)) {
+    if (!value) {
+      throw new Error(`Missing required environment variable: ${name}`);
+    }
+  }
+}
+
 async function main() {
+  validateEnvVariables();
+  
   // Check if force upload is enabled
   let force_upload = false;
-  if (process.env.force_upload.toLowerCase() == 'true' || process.env.force_upload == '1') {
+  if (process.env.force_upload && (process.env.force_upload.toLowerCase() == 'true' || process.env.force_upload == '1')) {
     console.log("---Force Upload Enabled---");
     force_upload = true;
   }
 
   // Get input and enviroment variables from the Action's context
-  const commit_changes = {
-    added: prepareEnvArrayValue(process.env.added),
-    modified: prepareEnvArrayValue(process.env.modified),
-    deleted: prepareEnvArrayValue(process.env.deleted),
-    copied: prepareEnvArrayValue(process.env.copied),
-    renamed: prepareEnvArrayValue(process.env.renamed),
-  };
+  const modifiedFiles = process.env.modified ? prepareEnvArrayValue(process.env.modified) : [];
 
-  const tfx_org = process.env.transifex_organization;
-  const tfx_token = process.env.transifex_token;
-  const tfx_project = process.env.transifex_project;
+  const transifexOrganization = process.env.transifex_organization;
+  const transifexToken = process.env.transifex_token;
+  const transifexProject = process.env.transifex_project;
   const file_extension = process.env.file_extension;
-  const tfx_name_pattern = process.env.transifex_name_pattern;
-  // const tfx_file_type = process.env.transifex_file_type;
-
+  const resourceNamePattern = process.env.transifex_name_pattern;
 
   // Setup Transifex helper and get project details
-  const tfxHelper = await TransifexApiHelper.create(tfx_token, tfx_org, tfx_project);
-  const transifexFiles = (await tfxHelper.getProjectFiles()).map(f => f.name);
-  const transifex_source_lang = await tfxHelper.getSourceLanguage();
+  const transifexHelper = await TransifexApiHelper.create(transifexToken, transifexOrganization, transifexProject);
+  const transifexFiles = (await transifexHelper.getProjectFiles()).map(f => f.name);
+  const sourceLanguage = await transifexHelper.getSourceLanguage();
 
   // Generate the final Transifex resource naming pattern
-  const tfx_resource_name_pattern = tfx_name_pattern.replace(/<lang>/g, transifex_source_lang).replace("<ext>", file_extension);
+  const resolvedResourceNamePattern = resourceNamePattern.replace(/<lang>/g, sourceLanguage).replace("<ext>", file_extension);
 
   // Get the repo's language files
-  const match_patterns = process.env.match_patterns.split(/\r?\n/).map(p => p.replace(/<lang>/g, transifex_source_lang).replace("<ext>", file_extension));
+  const match_patterns = process.env.match_patterns.split(/\r?\n/).map(p => p.replace(/<lang>/g, sourceLanguage).replace("<ext>", file_extension));
   const repoFiles = getRepoLanguageFiles(match_patterns);
 
   // Get the language file modifications reported by git
-  const matchedModified = matchFiles(commit_changes.modified, match_patterns);
-  // const matchedAdded = matchFiles(commit_changes.added, patterns);
-  // const matchedDeleted = matchFiles(commit_changes.deleted, patterns);
-  // const matchedCopied = matchFiles(commit_changes.copied, patterns);
-  // const matchedRenamed = matchFiles(commit_changes.renamed, patterns);
+  const gitModifiedFiles = matchFiles(modifiedFiles, match_patterns);
 
   // Create the final added,deleted,modified file lists
-  const added = extraFilesOnRepo(transifexFiles, repoFiles, tfx_resource_name_pattern);
-  const deleted = extraFilesOnTransifex(transifexFiles, repoFiles, tfx_resource_name_pattern);
-  const modified = force_upload ? repoFiles.filter(f => !added.includes(f)) : matchedModified.filter(f => !added.includes(f));
-
-  // Helper function to read multiple files asynchronously
-  const readFilesAsync = filenames => filenames.map(f => new Promise(async resolve => {
-    const contents = (await fs.promises.readFile(f)).toString();
-    resolve({
-      filename: f,
-      contents
-    });
-  }));
+  const added = getNewFiles(transifexFiles, repoFiles, resolvedResourceNamePattern);
+  const deleted = getDeletedFiles(transifexFiles, repoFiles, resolvedResourceNamePattern);
+  const modified = force_upload ? repoFiles.filter(f => !added.includes(f)) : gitModifiedFiles.filter(f => !added.includes(f));
 
   // Read added/modified file contents
-  const added_files_read_promises = readFilesAsync(added);
-  const modded_files_read_promises = readFilesAsync(modified)
+  const addedFilesPromises = readFilesAsync(added);
+  const modifiedFilesPromises = readFilesAsync(modified)
 
-  let added_request_promises = [];
-  let modded_request_promises = [];
-  let deleted_request_promises = [];
+  let createPromises = [];
+  let updatePromises = [];
+  let deletePromises = [];
 
   // Create new resource
   if (added.length > 0) {
     console.log("Creating resources:");
     console.log(added);
 
-    const added_files = await Promise.all(added_files_read_promises);
-    added_request_promises = added_files.map(added_file =>
-      tfxHelper.createResoureWithContent(convertRepoNameToTransifexName(added_file.filename, tfx_resource_name_pattern), added_file.contents));
+    try {
+      const addedFiles = await Promise.all(addedFilesPromises);
+      createPromises = addedFiles.map(addedFile =>
+        transifexHelper.createResourceWithContent(convertRepoNameToTransifexName(addedFile.filename, resolvedResourceNamePattern), addedFile.contents));
+    } catch (error) {
+      throw new Error(`Failed to create resource from files: ${error.message}`);
+    }
   }
 
   // Update modified resources
@@ -135,31 +88,45 @@ async function main() {
     console.log("Updating resources:");
     console.log(modified);
 
-    const modded_files = await Promise.all(modded_files_read_promises);
-    modded_request_promises = modded_files.map(modded_file =>
-      tfxHelper.updateResource(convertRepoNameToTransifexName(modded_file.filename, tfx_resource_name_pattern), modded_file.contents));
+    try {
+      const modifiedFiles = await Promise.all(modifiedFilesPromises);
+      updatePromises = modifiedFiles.map(modifiedFile =>
+        transifexHelper.updateResource(convertRepoNameToTransifexName(modifiedFile.filename, resolvedResourceNamePattern), modifiedFile.contents));
+    } catch (error) {
+      throw new Error(`Failed to update resource from files: ${error.message}`);
+    }
   }
 
   // Delete resources
   if (deleted.length > 0) {
     console.log("Deleting resources:");
     console.log(deleted);
-    for (const d of deleted) {
-      deleted_request_promises.push(tfxHelper.deleteResource(d));
-    };
+    try {
+      for (const d of deleted) {
+        deletePromises.push(transifexHelper.deleteResource(d));
+      };
+    } catch (error) {
+      throw new Error(`Failed to delete resource: ${error.message}`);
+    }
   }
 
   // Wait for all requests to finish
-  await Promise.all([
-    ...added_request_promises,
-    ...modded_request_promises,
-    ...deleted_request_promises
-  ]);
+  try {
+    await Promise.all([
+      ...createPromises,
+      ...updatePromises,
+      ...deletePromises
+    ]);
+  } catch (error) {
+    throw new Error(`Failed to complete Transifex operations: ${error.message}`);
+  }
 }
 
-try {
-  main();
-}
-catch (e) {
-  console.error(e.message);
-}
+(async () => {
+  try {
+    await main();
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
+})();
